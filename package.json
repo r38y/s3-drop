@@ -1,0 +1,81 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "s3-drop",
+  "title": "S3 Drop",
+  "description": "Drop clipboard files to S3 and get shareable links",
+  "icon": "extension-icon.png",
+  "author": "r38y",
+  "platforms": [
+    "macOS",
+    "Windows"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/r38y/s3-drop.git"
+  },
+  "commands": [
+    {
+      "name": "drop",
+      "title": "Drop to S3",
+      "description": "Drop clipboard file to S3 and get a shareable link",
+      "mode": "no-view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "awsAccessKey",
+      "type": "textfield",
+      "title": "AWS Access Key ID",
+      "description": "Your AWS IAM access key ID",
+      "placeholder": "AKIA...",
+      "required": true
+    },
+    {
+      "name": "awsSecretKey",
+      "type": "password",
+      "title": "AWS Secret Access Key",
+      "description": "Your AWS IAM secret access key",
+      "placeholder": "********",
+      "required": true
+    },
+    {
+      "name": "bucketName",
+      "type": "textfield",
+      "title": "S3 Bucket Name",
+      "description": "The S3 bucket to upload files to",
+      "placeholder": "your-bucket-name",
+      "required": true
+    },
+    {
+      "name": "awsRegion",
+      "type": "textfield",
+      "title": "AWS Region",
+      "description": "The AWS region where your bucket is located",
+      "placeholder": "us-east-1",
+      "required": true
+    }
+  ],
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.969.0",
+    "@aws-sdk/s3-request-presigner": "^3.969.0",
+    "@raycast/api": "^1.104.1",
+    "mime-types": "^3.0.2"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.0.4",
+    "@types/mime-types": "^3.0.1",
+    "@types/node": "22.13.10",
+    "eslint": "^9.22.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2"
+  },
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
+    "publish": "npx @raycast/api@latest publish"
+  }
+}
