@@ -105,6 +105,56 @@ When you first run the extension, Raycast will prompt you to configure:
 | AWS Secret Access Key | Your IAM user's secret key | (stored securely in macOS Keychain) |
 | S3 Bucket Name        | The bucket you created     | `my-clipboard-uploads`              |
 | AWS Region            | The region of your bucket  | `us-east-1`                         |
+| Custom Domain (Optional) | If set, the copied URL will use your domain (requires CloudFront) | `rc.example.com` |
+
+## (Optional) Custom Domain + HTTPS (rc.example.com)
+
+If you want the copied URL to be on a custom domain like `https://rc.example.com/<object-key>`, the usual AWS setup is CloudFront in front of your S3 bucket.
+
+Notes:
+
+- S3 static website hosting does not support HTTPS on a custom domain by itself.
+- This extension still generates an S3 presigned URL (24 hours) and optionally rewrites the hostname to your custom domain. You must configure CloudFront to forward the query string so the S3 signature remains valid.
+- This "custom domain" mode is still S3-presigned-URL auth. That means you should NOT lock the bucket down to "CloudFront-only" with OAC/OAI + restrictive bucket policy, because S3 is authorizing the request as your IAM principal via the signature. (If you want CloudFront-only private access, that's the CloudFront Signed URL + OAC design, which is a different implementation.)
+
+### 1. Request an ACM Certificate (Required for CloudFront)
+
+1. Go to **AWS Certificate Manager (ACM)**.
+2. Switch region to **us-east-1 (N. Virginia)**.
+3. Request a public certificate for `rc.example.com`.
+4. Choose **DNS validation**.
+5. ACM will provide a DNS CNAME record. Add it at your DNS host and wait for the cert to become **Issued**.
+
+### 2. Create a CloudFront Distribution
+
+1. Go to **CloudFront** and create a distribution.
+2. Origin:
+   - Choose your S3 bucket as the origin.
+   - Use the S3 bucket REST endpoint (not the S3 website hosting endpoint).
+3. Viewer:
+   - Set **Viewer protocol policy** to **Redirect HTTP to HTTPS** (or **HTTPS only**).
+4. Alternate domain name (CNAME):
+   - Add `rc.example.com`.
+5. Custom SSL certificate:
+   - Select the ACM certificate you created in `us-east-1`.
+6. Cache / origin request settings (important):
+   - Ensure CloudFront forwards query strings to the origin (the presigned URL uses `X-Amz-*` query parameters).
+   - Ensure the cache key includes query strings (or keep TTLs low) so different signed URLs do not collide.
+
+### 3. Point DNS at CloudFront
+
+In your DNS host, point `rc.example.com` to the CloudFront distribution.
+
+- Route 53: create `A` and `AAAA` **Alias** records for `rc.example.com` targeting the distribution
+- Other DNS hosts: create a `CNAME` record `rc.example.com` -> `<your-distribution-id>.cloudfront.net`
+
+### 4. Configure Raycast
+
+Set **Custom Domain (Optional)** to `rc.example.com`.
+
+After uploading, the extension will copy a URL like:
+
+`https://rc.example.com/<object-key>?X-Amz-Algorithm=...`
 
 ## Usage
 

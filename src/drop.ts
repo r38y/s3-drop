@@ -34,6 +34,24 @@ interface Preferences {
   awsSecretKey: string;
   bucketName: string;
   awsRegion: string;
+  customDomain?: string;
+}
+
+function applyCustomDomainIfConfigured(originalUrl: string, customDomain: string | undefined): string {
+  const trimmed = customDomain?.trim();
+  if (!trimmed) return originalUrl;
+
+  try {
+    const domainUrl = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+    const url = new URL(originalUrl);
+
+    url.protocol = "https:";
+    url.host = domainUrl.host;
+
+    return url.toString();
+  } catch {
+    return originalUrl;
+  }
 }
 
 export default async function Command() {
@@ -102,7 +120,8 @@ export default async function Command() {
       { expiresIn: 86400 },
     );
 
-    await Clipboard.copy(url);
+    const finalUrl = applyCustomDomainIfConfigured(url, prefs.customDomain);
+    await Clipboard.copy(finalUrl);
     toast.style = Toast.Style.Success;
     toast.title = "File Uploaded";
     toast.message = "URL copied to clipboard";
