@@ -54,6 +54,14 @@
       "description": "The AWS region where your bucket is located",
       "placeholder": "us-east-1",
       "required": true
+    },
+    {
+      "name": "customDomain",
+      "type": "textfield",
+      "title": "Custom Domain (Optional)",
+      "description": "If set, the copied URL will use this domain (e.g., rc.example.com)",
+      "placeholder": "rc.example.com",
+      "required": false
     }
   ],
   "dependencies": {
