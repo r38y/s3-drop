@@ -6,8 +6,10 @@ A Raycast extension that uploads files from your clipboard to AWS S3 and copies 
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v16 or later)
+- [Node.js](https://nodejs.org/) (v22.14.0 or later)
 - [Raycast](https://raycast.com/) installed on your Mac
+
+If you use `asdf` or `mise`, this repo includes a [.tool-versions](/Users/r38y/code/s3-drop/.tool-versions) file pinned to `nodejs 22.14.0`.
 
 ### Development Mode
 
