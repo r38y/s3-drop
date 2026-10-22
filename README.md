@@ -6,10 +6,10 @@ A Raycast extension that uploads files from your clipboard to AWS S3 and copies 
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v22.14.0 or later)
+- [Node.js](https://nodejs.org/) (v22.14.0 or later, required by Raycast's CLI)
 - [Raycast](https://raycast.com/) installed on your Mac
 
-If you use `asdf` or `mise`, this repo includes a [.tool-versions](/Users/r38y/code/s3-drop/.tool-versions) file pinned to `nodejs 22.14.0`.
+Use Node.js and npm for this repository because the Raycast CLI requires Node.js. Keeping one toolchain avoids needing Bun alongside it. If you use `asdf` or `mise`, this repo includes a [.tool-versions](.tool-versions) file pinned to `nodejs 22.14.0`. Commit `package-lock.json` when dependencies change; use `npm ci` for reproducible installs.
 
 ### Development Mode
 
@@ -36,8 +36,9 @@ npm run build
 ### Other Commands
 
 ```bash
-npm run lint       # Run ESLint
+npm run lint       # Validate the Raycast manifest, ESLint, and formatting
 npm run fix-lint   # Auto-fix lint issues
+npm run publish    # Publish to the Raycast Store
 ```
 
 ## AWS Setup

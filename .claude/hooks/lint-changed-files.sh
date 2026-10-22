@@ -1,22 +1,18 @@
 #!/bin/bash
 
-# Read JSON input from stdin
-json_input=$(cat)
+# PostToolUse hooks receive the edited file path as JSON on stdin.
+file_path=$(jq -r '.tool_input.file_path // empty') || exit 2
+[ -n "$file_path" ] || exit 0
 
-# Extract file path from the JSON
-file_path=$(echo "$json_input" | jq -r '.tool_input.file_path // empty')
+# Resolve installed tools and configuration from this repository.
+project_root=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}
+cd "$project_root" || exit 2
 
-# Exit if no file path
-if [ -z "$file_path" ]; then
-    exit 0
-fi
-
-# Format based on file extension
 case "$file_path" in
-*.ts | *.tsx | *.json | *.md)
-    echo "Formatting $file_path with prettier..."
-    npx prettier --write "$file_path"
+*.js | *.jsx | *.ts | *.tsx | *.css | *.scss | *.json | *.jsonc | *.md)
+    npx --no-install prettier --write "$file_path" >&2 || exit 2
+    ;;
+*.sh)
+    bash -n "$file_path" >&2 || exit 2
     ;;
 esac
-
-exit 0
