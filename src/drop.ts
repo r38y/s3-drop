@@ -1,12 +1,13 @@
 import { getPreferenceValues, Clipboard, showToast, Toast } from "@raycast/api";
-import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, PutObjectCommand, PutObjectCommandInput } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { ReadStream } from "node:fs";
+import { constants, ReadStream, Stats } from "node:fs";
 import { open, FileHandle } from "node:fs/promises";
 import { basename, extname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lookup } from "mime-types";
 import { randomUUID } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
 const LINK_EXPIRY_SECONDS = 24 * 60 * 60;
@@ -28,6 +29,50 @@ const INLINE_TYPES = new Set([
 ]);
 
 type Stage = "clipboard" | "file" | "upload" | "link" | "copy";
+
+function isRetryable(error: unknown): boolean {
+  const detail = error as {
+    name?: string;
+    code?: string;
+    cause?: { code?: string };
+    $metadata?: { httpStatusCode?: number };
+  } | null;
+  const code = detail?.code || detail?.cause?.code || detail?.name;
+  return (
+    ["EAI_AGAIN", "ECONNRESET", "ETIMEDOUT", "EPIPE", "TimeoutError", "SlowDown", "RequestTimeout"].includes(
+      code || "",
+    ) || [429, 500, 502, 503, 504].includes(detail?.$metadata?.httpStatusCode || 0)
+  );
+}
+
+async function uploadFile(client: S3Client, filePath: string, original: Stats, input: PutObjectCommandInput) {
+  // The SDK cannot retry a consumed stream. Reopen it for each bounded attempt.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const file = await open(filePath, constants.O_RDONLY | constants.O_NONBLOCK);
+    let body: ReadStream | undefined;
+    try {
+      const current = await file.stat();
+      if (
+        !current.isFile() ||
+        current.dev !== original.dev ||
+        current.ino !== original.ino ||
+        current.size !== original.size ||
+        current.mtimeMs !== original.mtimeMs
+      ) {
+        throw new Error("The file changed. Copy it again in Finder and try again.");
+      }
+      body = file.createReadStream();
+      await client.send(new PutObjectCommand({ ...input, Body: body }));
+      return;
+    } catch (error) {
+      if (attempt === 2 || !isRetryable(error)) throw error;
+    } finally {
+      body?.destroy();
+      await file.close();
+    }
+    await setTimeout(500 * 2 ** attempt);
+  }
+}
 
 function contentDisposition(filename: string, contentType: string): string {
   // Keep a quoted ASCII fallback and preserve Unicode names with RFC 5987 encoding.
@@ -91,7 +136,6 @@ export default async function Command() {
   let stage: Stage = "clipboard";
   let client: S3Client | undefined;
   let file: FileHandle | undefined;
-  let body: ReadStream | undefined;
 
   try {
     const clipboard = await Clipboard.read();
@@ -106,13 +150,15 @@ export default async function Command() {
 
     stage = "file";
     const filePath = isAbsolute(clipboard.file) ? clipboard.file : fileURLToPath(clipboard.file);
-    file = await open(filePath, "r");
+    file = await open(filePath, constants.O_RDONLY | constants.O_NONBLOCK);
     const fileStats = await file.stat();
+    await file.close();
+    file = undefined;
     if (!fileStats.isFile()) {
       await showToast({
         style: Toast.Style.Failure,
-        title: "Cannot Upload Folder",
-        message: "Copy a single file, or compress the folder first.",
+        title: fileStats.isDirectory() ? "Cannot Upload Folder" : "Cannot Upload Special File",
+        message: "Copy a regular file, or compress a folder first.",
       });
       return;
     }
@@ -131,19 +177,17 @@ export default async function Command() {
     client = new S3Client({
       region: prefs.awsRegion,
       credentials: { accessKeyId: prefs.awsAccessKey, secretAccessKey: prefs.awsSecretKey },
+      maxAttempts: 1,
+      requestHandler: { connectionTimeout: 10_000, socketTimeout: 60_000 },
     });
     const key = `${randomUUID()}${extname(filePath)}`;
     const contentType = lookup(filePath) || "application/octet-stream";
-    body = file.createReadStream({ autoClose: false });
-    await client.send(
-      new PutObjectCommand({
-        Bucket: prefs.bucketName,
-        Key: key,
-        Body: body,
-        ContentLength: fileStats.size,
-        ContentType: contentType,
-      }),
-    );
+    await uploadFile(client, filePath, fileStats, {
+      Bucket: prefs.bucketName,
+      Key: key,
+      ContentLength: fileStats.size,
+      ContentType: contentType,
+    });
 
     stage = "link";
     const url = await getSignedUrl(
@@ -172,7 +216,6 @@ export default async function Command() {
       await showToast({ style: Toast.Style.Failure, title, message });
     }
   } finally {
-    body?.destroy();
     client?.destroy();
     await file?.close();
   }
