@@ -1,15 +1,15 @@
 # S3 Drop
 
-A Raycast extension that uploads files from your clipboard to AWS S3 and copies a 24-hour presigned URL to your clipboard.
+A macOS Raycast extension that uploads files from your clipboard to AWS S3 and copies a 24-hour presigned URL to your clipboard.
 
 ## Building & Installing
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v22.14.0 or later, required by Raycast's CLI)
+- [Node.js](https://nodejs.org/) (v22.22.2 or later, required by Raycast's CLI)
 - [Raycast](https://raycast.com/) installed on your Mac
 
-Use Node.js and npm for this repository because the Raycast CLI requires Node.js. Keeping one toolchain avoids needing Bun alongside it. If you use `asdf` or `mise`, this repo includes a [.tool-versions](.tool-versions) file pinned to `nodejs 22.14.0`. Commit `package-lock.json` when dependencies change; use `npm ci` for reproducible installs.
+Use Node.js and npm for this repository because the Raycast CLI requires Node.js. Keeping one toolchain avoids needing Bun alongside it. If you use `asdf` or `mise`, this repo includes a [.tool-versions](.tool-versions) file pinned to `nodejs 22.22.2`. Commit `package-lock.json` when dependencies change; use `npm ci` for reproducible installs.
 
 ### Development Mode
 
@@ -39,7 +39,12 @@ npm run build
 npm run lint       # Validate the Raycast manifest, ESLint, and formatting
 npm run fix-lint   # Auto-fix lint issues
 npm run publish    # Publish to the Raycast Store
+npm test           # Run upload regression tests
+npm run typecheck  # Check TypeScript types
+npm run check      # Build, lint, typecheck, and test
 ```
+
+The same checks run on pull requests and pushes to `main`. `npm run check` writes build output to `.build/` without changing your installed Raycast extension.
 
 ## AWS Setup
 
@@ -100,7 +105,7 @@ Objects will be automatically deleted after the specified number of days.
 
 ## Extension Configuration
 
-When you first run the extension, Raycast will prompt you to configure:
+When you first run the extension, Raycast will prompt you to configure these values and show the setup instructions from [help.md](help.md):
 
 | Setting               | Description                | Example                             |
 | --------------------- | -------------------------- | ----------------------------------- |

@@ -9,7 +9,7 @@ project_root=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}
 cd "$project_root" || exit 2
 
 case "$file_path" in
-*.js | *.jsx | *.ts | *.tsx | *.css | *.scss | *.json | *.jsonc | *.md)
+*.js | *.jsx | *.mjs | *.cjs | *.ts | *.tsx | *.css | *.scss | *.json | *.jsonc | *.md)
     npx --no-install prettier --write "$file_path" >&2 || exit 2
     ;;
 *.sh)
