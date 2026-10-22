@@ -16,3 +16,8 @@ compiled_raycast_rust
 # Claude Code local settings
 .claude/settings.local.json
 .mcp.json
+
+# Local validation and review output
+.build/
+.test-build/
+tmp/
