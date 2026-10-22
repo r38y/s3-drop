@@ -54,7 +54,7 @@ The same checks run on pull requests and pushes to `main`. `npm run check` write
 2. Click **Create bucket**
 3. Enter a bucket name (e.g., `my-clipboard-uploads`)
 4. Select your preferred region (note this for later)
-5. Keep **Block all public access** enabled (presigned URLs don't require public access)
+5. Keep **Block all public access** enabled (presigned URLs don't require public access). Use a dedicated bucket for S3 Drop so its access policy and cleanup rules cannot affect unrelated files.
 6. Click **Create bucket**
 
 ### 2. Create an IAM User
@@ -96,12 +96,12 @@ You can automatically delete old files to save storage costs.
 2. Click the **Management** tab
 3. Click **Create lifecycle rule**
 4. Enter a rule name (e.g., `delete-after-1-day`)
-5. Apply to all objects in the bucket
+5. Apply to all objects **only in a dedicated S3 Drop bucket**. Do not use this rule in a bucket containing files you want to keep; it also affects existing objects.
 6. Under **Lifecycle rule actions**, check **Expire current versions of objects**
 7. Set **Days after object creation** to `1` (or longer if you prefer)
 8. Click **Create rule**
 
-Objects will be automatically deleted after the specified number of days.
+Expiration is asynchronous, not an exact deletion deadline. If bucket versioning is enabled, expiring current versions adds delete markers and retains noncurrent versions. Also configure **Permanently delete noncurrent versions of objects** if you want to remove those retained uploads, and clean up expired delete markers. See [AWS's expiration guidance](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html).
 
 ## Extension Configuration
 
@@ -126,3 +126,6 @@ When you first run the extension, Raycast will prompt you to configure these val
 - Files remain private in your S3 bucket
 - Presigned URLs allow temporary access without making the bucket public
 - URLs automatically expire after 24 hours
+- Files remain stored until you delete them or a lifecycle rule removes them. Revoking credentials, changing bucket permissions, or deleting the object can invalidate a link earlier.
+- Uploads stream from disk, with up to three attempts for temporary failures. Connections time out after 10 seconds and transfers after 60 seconds without network activity.
+- Copy one regular file at a time, up to 5 GiB. Compress folders before copying them.

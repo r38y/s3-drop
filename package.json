@@ -8,6 +8,9 @@
   "platforms": [
     "macOS"
   ],
+  "categories": [
+    "Productivity"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -73,12 +76,12 @@
     "build": "ray build",
     "dev": "ray develop",
     "fix-lint": "ray lint --fix",
-    "lint": "ray lint && eslint test && prettier --check test .github/workflows help.md tsconfig.test.json",
+    "lint": "ray lint && eslint test && prettier --check test .github/workflows help.md CHANGELOG.md tsconfig.test.json",
     "prepublishOnly": "echo 'Use npm run publish to publish this extension to the Raycast Store.' && exit 1",
     "publish": "ray publish",
     "typecheck": "tsc --noEmit",
     "test": "tsc --project tsconfig.test.json && node --test test/drop.test.mjs",
-    "check": "npm run lint && npm run typecheck && npm test",
+    "check": "npm run lint && npm run typecheck && npm run test --ignore-scripts",
     "pretest": "ray build --output .build",
     "pretypecheck": "ray build --output .build"
   },

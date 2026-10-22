@@ -1,0 +1,4 @@
+Generated with the built-in OpenAI imagegen tool, then resized to 512x512 PNG.
+
+Prompt:
+Use case: logo-brand. Create one production app icon for S3 Drop, a minimal utility that uploads a file to cloud storage. Square 1:1, ideally 512 by 512 pixels. A deep navy rounded square tile with a single bold white upward upload arrow emerging from a simple cyan bucket/tray. Flat vector-like geometry, crisp thick forms, very legible at 32px, generous padding. No text, letters, existing brand logos, watermarks, mockup, perspective or surrounding scene. Transparent canvas outside the rounded square.

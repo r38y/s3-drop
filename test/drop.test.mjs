@@ -3,7 +3,11 @@ import { beforeEach, after, test } from "node:test";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { compileFunction } from "node:vm";
-import { mkdtemp, writeFile, truncate, chmod, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, truncate, chmod, rm, open } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import * as aws from "@aws-sdk/client-s3";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -48,6 +52,10 @@ modules["@aws-sdk/client-s3"] = {
       const chunks = [];
       for await (const chunk of command.input.Body) chunks.push(chunk);
       state.uploadedBytes = Buffer.concat(chunks);
+      state.attemptBytes.push(state.uploadedBytes);
+      await state.afterUpload?.();
+      const error = state.uploadErrors?.shift();
+      if (error) throw error;
     }
     destroy() {
       state.destroyed = true;
@@ -80,13 +88,22 @@ const compiled = compileFunction(
   ["exports", "require", "module", "__filename", "__dirname"],
   { filename },
 );
-const loaded = { exports: {} };
-compiled(loaded.exports, (name) => modules[name] ?? requireFromCommand(name), loaded, filename, dirname(filename));
-const command = loaded.exports.default;
+function loadCommand(overrides = {}) {
+  const loaded = { exports: {} };
+  compiled(
+    loaded.exports,
+    (name) => overrides[name] ?? modules[name] ?? requireFromCommand(name),
+    loaded,
+    filename,
+    dirname(filename),
+  );
+  return loaded.exports.default;
+}
+const command = loadCommand();
 
 beforeEach(async () => {
   directory ||= await mkdtemp(join(tmpdir(), "s3-drop-test-"));
-  state = { clipboard: {}, toasts: [], copied: [], uploads: [], signatures: [] };
+  state = { clipboard: {}, toasts: [], copied: [], uploads: [], signatures: [], attemptBytes: [] };
 });
 after(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
@@ -164,6 +181,144 @@ test("rejects directories", async () => {
   assert.equal(state.uploads.length, 0);
 });
 
+test("rejects a named pipe without waiting for a writer", async () => {
+  const fifo = join(directory, "named-pipe");
+  execFileSync("mkfifo", [fifo]);
+  state.clipboard = { file: fifo };
+  // Release a regressed blocking open so that the test can fail without hanging.
+  let neededWriter = false;
+  const release = setTimeout(async () => {
+    neededWriter = true;
+    const writer = await open(fifo, "w");
+    await writer.close();
+  }, 500);
+  try {
+    await command();
+    assert.equal(neededWriter, false);
+    assert.equal(failure().title, "Cannot Upload Special File");
+    assert.equal(state.uploads.length, 0);
+  } finally {
+    clearTimeout(release);
+  }
+});
+
+test("retries a consumed stream from the beginning using the same object key", async () => {
+  const contents = "file contents".repeat(20_000);
+  await copyFile("retry.txt", contents);
+  state.uploadErrors = [namedError("SlowDown")];
+  await command();
+  assert.equal(state.uploads.length, 2);
+  assert.equal(state.uploads[0].Key, state.uploads[1].Key);
+  assert.notEqual(state.uploads[0].Body, state.uploads[1].Body);
+  assert.deepEqual(
+    state.attemptBytes.map((bytes) => bytes.toString()),
+    [contents, contents],
+  );
+  assert.ok(state.uploads.every((upload) => upload.Body.destroyed));
+  assert.equal(state.copied.length, 1);
+});
+
+test("stops after three transient failures without copying a link", async () => {
+  await copyFile("exhausted.txt");
+  state.uploadError = Object.assign(new Error("Service unavailable"), { $metadata: { httpStatusCode: 503 } });
+  await command();
+  assert.equal(state.uploads.length, 3);
+  assert.ok(state.uploads.every((upload) => upload.Key === state.uploads[0].Key && upload.Body.destroyed));
+  assert.equal(state.copied.length, 0);
+  assert.equal(failure().message, "Service unavailable");
+});
+
+test("does not retry with changed file contents", async () => {
+  const file = await copyFile("changed.txt", "original");
+  state.uploadErrors = [namedError("SlowDown")];
+  state.afterUpload = () => writeFile(file, "changed contents");
+  await command();
+  assert.equal(state.uploads.length, 1);
+  assert.match(failure().message, /file changed/);
+  assert.equal(state.copied.length, 0);
+});
+
+async function transportCommand(t, handler) {
+  const server = createServer(handler);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(
+    () =>
+      new Promise((resolve) => {
+        server.closeAllConnections();
+        server.close(resolve);
+      }),
+  );
+  return loadCommand({
+    "@aws-sdk/client-s3": {
+      ...aws,
+      S3Client: class extends aws.S3Client {
+        constructor(options) {
+          super({
+            ...options,
+            endpoint: `http://127.0.0.1:${server.address().port}`,
+            forcePathStyle: true,
+            // Exercise the real configured inactivity timeout at test speed.
+            requestHandler: { ...options.requestHandler, socketTimeout: options.requestHandler?.socketTimeout / 1000 },
+          });
+          t.after(() => this.destroy());
+        }
+      },
+    },
+  });
+}
+
+test("real AWS transport retries an S3 503 with the complete payload", { timeout: 5000 }, async (t) => {
+  await copyFile("transport.txt", "payload".repeat(20_000));
+  const requests = [];
+  const run = await transportCommand(t, (req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      requests.push({ url: req.url, body: Buffer.concat(chunks) });
+      if (requests.length === 1) {
+        res.writeHead(503, { "Content-Type": "application/xml" });
+        res.end("<Error><Code>SlowDown</Code><Message>Try again</Message></Error>");
+      } else {
+        res.writeHead(200);
+        res.end();
+      }
+    });
+  });
+  await run();
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].url, requests[1].url);
+  // Decode the SDK's aws-chunked framing, whose chunk boundaries may vary.
+  for (const { body } of requests) {
+    const chunks = [];
+    let offset = 0;
+    while (offset < body.length) {
+      const end = body.indexOf("\r\n", offset);
+      assert.ok(end >= offset);
+      const size = Number.parseInt(body.toString("ascii", offset, end), 16);
+      assert.ok(Number.isFinite(size));
+      if (size === 0) break;
+      chunks.push(body.subarray(end + 2, end + 2 + size));
+      offset = end + 2 + size + 2;
+    }
+    assert.equal(Buffer.concat(chunks).toString(), "payload".repeat(20_000));
+  }
+  assert.equal(state.copied.length, 1);
+});
+
+test("real AWS transport times out a stalled response and stops retrying", { timeout: 5000 }, async (t) => {
+  await copyFile("stalled.txt");
+  let requests = 0;
+  const run = await transportCommand(t, (req) => {
+    requests++;
+    req.resume();
+  });
+  await run();
+  assert.equal(requests, 3);
+  assert.match(failure().message, /internet connection/);
+  assert.equal(state.copied.length, 0);
+});
+
 test("rejects files above the single-upload limit without reading them", async () => {
   const file = await copyFile("large.bin", "");
   await truncate(file, 5 * 1024 * 1024 * 1024 + 1);
@@ -204,6 +359,7 @@ for (const [name, expected] of [
     assert.equal(state.signatures.length, 0);
     assert.equal(state.uploads[0].Body.destroyed, true);
     assert.equal(state.destroyed, true);
+    assert.equal(state.uploads.length, name === "TimeoutError" ? 3 : 1);
   });
 }
 
